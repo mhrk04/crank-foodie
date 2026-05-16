@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import type { Restaurant } from "@/lib/types";
 import { scoreTone } from "@/lib/utils";
@@ -15,7 +15,8 @@ export function RestaurantMap({ restaurants, selectedId, onSelect }: RestaurantM
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const markersRef = useRef<mapboxgl.Marker[]>([]);
-  const token = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN;
+  const [mapError, setMapError] = useState("");
+  const token = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN?.trim();
 
   useEffect(() => {
     if (!token || !containerRef.current || mapRef.current) return;
@@ -27,6 +28,11 @@ export function RestaurantMap({ restaurants, selectedId, onSelect }: RestaurantM
       center: [101.6037, 3.0685],
       zoom: 13.2,
       pitch: 30
+    });
+
+    mapRef.current.on("error", (event) => {
+      const message = event.error?.message || "Mapbox could not load the live map.";
+      setMapError(message);
     });
 
     mapRef.current.addControl(new mapboxgl.NavigationControl({ showCompass: false }), "top-right");
@@ -75,12 +81,21 @@ export function RestaurantMap({ restaurants, selectedId, onSelect }: RestaurantM
           </button>
         ))}
         <div className="absolute bottom-4 left-4 right-4 rounded-md bg-white/90 p-3 text-sm text-ink shadow">
-          Set `NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN` to render the live map. The fallback keeps restaurant selection usable.
+          Add your Mapbox token to <span className="font-semibold">C:\Source\Repos\crank-foodie\.env.local</span> as{" "}
+          <span className="font-semibold">NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN=pk...</span>, then restart <span className="font-semibold">npm run dev</span>.
         </div>
       </div>
     );
   }
 
-  return <div ref={containerRef} className="min-h-[420px] overflow-hidden rounded-md border border-steel" />;
+  return (
+    <div className="relative min-h-[420px] overflow-hidden rounded-md border border-steel">
+      <div ref={containerRef} className="absolute inset-0" />
+      {mapError ? (
+        <div className="absolute bottom-4 left-4 right-4 rounded-md border border-tomato bg-white/95 p-3 text-sm text-ink shadow">
+          <span className="font-semibold">Mapbox error:</span> {mapError}
+        </div>
+      ) : null}
+    </div>
+  );
 }
-

@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { useAccount, useReadContract, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
+import { useAccount, usePublicClient, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
 import {
   Bug,
   ClipboardCheck,
@@ -19,8 +19,7 @@ import { RestaurantMap } from "@/components/restaurant-map";
 import { ReportModal } from "@/components/report-modal";
 import { CleaningLogModal } from "@/components/cleaning-log-modal";
 import { crankFoodieAbi, crankFoodieAddress, reportTypeOptions } from "@/lib/contract";
-import { seedRestaurants, supportedAreas } from "@/lib/seed-data";
-import { insertSupabaseRow } from "@/lib/supabase";
+import { supportedAreas } from "@/lib/seed-data";
 import type { CleaningLogDraft, ReportDraft, Restaurant } from "@/lib/types";
 import { cn, scoreTone } from "@/lib/utils";
 
@@ -33,9 +32,36 @@ const emptyRestaurantForm = {
   metadataURI: ""
 };
 
+type OnChainRestaurant = Record<string, unknown> & readonly unknown[];
+
+const restaurantRefetchIntervalMs = 15000;
+
+function readStructValue<T>(item: OnChainRestaurant, key: string, index: number) {
+  return (item[key] ?? item[index]) as T | undefined;
+}
+
+function coordinatesFromContract(latitudeValue: string, longitudeValue: string, index: number) {
+  const latitude = Number(latitudeValue);
+  const longitude = Number(longitudeValue);
+
+  if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+    return [latitude, longitude] as const;
+  }
+
+  const offsets = [
+    [0, 0],
+    [0.0024, 0.0033],
+    [0.0059, -0.0149],
+    [-0.0061, 0.0132],
+    [0.0101, -0.0031],
+    [-0.0104, -0.0062]
+  ];
+  const [latOffset, lngOffset] = offsets[index % offsets.length];
+  return [3.0685 + latOffset, 101.6037 + lngOffset] as const;
+}
+
 export function Dashboard() {
-  const [restaurants, setRestaurants] = useState(seedRestaurants);
-  const [selectedId, setSelectedId] = useState(seedRestaurants[0].id);
+  const [selectedId, setSelectedId] = useState(0);
   const [query, setQuery] = useState("");
   const [area, setArea] = useState("All");
   const [showRegister, setShowRegister] = useState(false);
@@ -43,22 +69,15 @@ export function Dashboard() {
   const [reportTarget, setReportTarget] = useState<Restaurant | null>(null);
   const [cleaningTarget, setCleaningTarget] = useState<Restaurant | null>(null);
   const [notice, setNotice] = useState("");
+  const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
+  const [isLoadingRestaurants, setIsLoadingRestaurants] = useState(true);
+  const [restaurantReadError, setRestaurantReadError] = useState("");
+  const [refreshNonce, setRefreshNonce] = useState(0);
 
   const { isConnected } = useAccount();
+  const publicClient = usePublicClient();
   const { data: hash, isPending, writeContractAsync } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
-  const {
-    data: restaurantCount,
-    refetch: refetchRestaurantCount,
-    isError: isRestaurantCountError
-  } = useReadContract({
-    address: crankFoodieAddress,
-    abi: crankFoodieAbi,
-    functionName: "restaurantCount",
-    query: {
-      refetchInterval: 15000
-    }
-  });
 
   const hasContract = Boolean(crankFoodieAddress);
   const canWrite = hasContract && isConnected;
@@ -74,16 +93,119 @@ export function Dashboard() {
     });
   }, [area, query, restaurants]);
 
-  const selectedRestaurant = restaurants.find((restaurant) => restaurant.id === selectedId) || restaurants[0];
-  const totalRestaurantCount = restaurantCount !== undefined ? restaurantCount.toString() : String(restaurants.length);
+  const selectedRestaurant = restaurants.find((restaurant) => restaurant.id === selectedId) || restaurants[0] || null;
+  const totalRestaurantCount = String(restaurants.length);
   const issueCount = restaurants.reduce((sum, restaurant) => sum + restaurant.reportCount, 0);
   const cleaningCount = restaurants.reduce((sum, restaurant) => sum + restaurant.cleaningCountToday, 0);
 
   useEffect(() => {
     if (isSuccess) {
-      refetchRestaurantCount();
+      setRefreshNonce((value) => value + 1);
     }
-  }, [isSuccess, refetchRestaurantCount]);
+  }, [isSuccess]);
+
+  useEffect(() => {
+    if (!publicClient || !hasContract) {
+      setIsLoadingRestaurants(false);
+      return;
+    }
+
+    let isCancelled = false;
+
+    async function loadRestaurants() {
+      setIsLoadingRestaurants((current) => current || restaurants.length === 0);
+      setRestaurantReadError("");
+
+      try {
+        const nextRestaurants: Restaurant[] = [];
+
+        for (let id = 1; ; id += 1) {
+          let item: OnChainRestaurant;
+
+          try {
+            item = (await publicClient.readContract({
+              address: crankFoodieAddress,
+              abi: crankFoodieAbi,
+              functionName: "getRestaurant",
+              args: [BigInt(id)]
+            })) as unknown as OnChainRestaurant;
+          } catch {
+            break;
+          }
+
+          const [scoreResult, reportIdsResult, cleaningIdsResult] = await Promise.allSettled([
+            publicClient.readContract({
+              address: crankFoodieAddress,
+              abi: crankFoodieAbi,
+              functionName: "calculateHygieneScore",
+              args: [BigInt(id)]
+            }),
+            publicClient.readContract({
+              address: crankFoodieAddress,
+              abi: crankFoodieAbi,
+              functionName: "getRestaurantReportIds",
+              args: [BigInt(id)]
+            }),
+            publicClient.readContract({
+              address: crankFoodieAddress,
+              abi: crankFoodieAbi,
+              functionName: "getRestaurantCleaningLogIds",
+              args: [BigInt(id)]
+            })
+          ]);
+
+          const parsedId = Number(readStructValue<bigint>(item, "id", 0) || BigInt(id));
+          const rawLatitude = String(readStructValue<string>(item, "latitude", 3) || "");
+          const rawLongitude = String(readStructValue<string>(item, "longitude", 4) || "");
+          const [latitude, longitude] = coordinatesFromContract(rawLatitude, rawLongitude, nextRestaurants.length);
+          const reportIds = reportIdsResult.status === "fulfilled" && Array.isArray(reportIdsResult.value) ? reportIdsResult.value : [];
+          const cleaningIds =
+            cleaningIdsResult.status === "fulfilled" && Array.isArray(cleaningIdsResult.value) ? cleaningIdsResult.value : [];
+
+          nextRestaurants.push({
+            id: parsedId,
+            name: String(readStructValue<string>(item, "name", 1) || `Restaurant ${parsedId}`),
+            area: String(readStructValue<string>(item, "area", 2) || "Monad Testnet"),
+            latitude,
+            longitude,
+            priceRange: Number(readStructValue<bigint>(item, "priceRange", 5) || BigInt(0)),
+            metadataURI: String(readStructValue<string>(item, "metadataURI", 6) || ""),
+            score: scoreResult.status === "fulfilled" ? Number(scoreResult.value) : 88,
+            reportCount: reportIds.length,
+            cleaningCountToday: cleaningIds.length,
+            lastCleanedAt: cleaningIds.length > 0 ? `${cleaningIds.length} on-chain logs` : "No logs",
+            tags: ["On-chain"]
+          });
+        }
+
+        if (!isCancelled) {
+          setRestaurants(nextRestaurants);
+        }
+      } catch (error) {
+        if (!isCancelled) {
+          setRestaurantReadError(error instanceof Error ? error.message : "Could not read restaurants from Monad testnet.");
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsLoadingRestaurants(false);
+        }
+      }
+    }
+
+    loadRestaurants();
+    const intervalId = window.setInterval(loadRestaurants, restaurantRefetchIntervalMs);
+
+    return () => {
+      isCancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [hasContract, publicClient, refreshNonce, restaurants.length]);
+
+  useEffect(() => {
+    if (restaurants.length > 0 && !restaurants.some((restaurant) => restaurant.id === selectedId)) {
+      setSelectedId(restaurants[0].id);
+    }
+  }, [restaurants, selectedId]);
 
   function selectRestaurant(restaurant: Restaurant) {
     setSelectedId(restaurant.id);
@@ -122,33 +244,8 @@ export function Dashboard() {
       return;
     }
 
-    const optimisticRestaurant: Restaurant = {
-      id: Number((restaurantCount || BigInt(restaurants.length)) + BigInt(1)),
-      name: restaurantForm.name,
-      area: restaurantForm.area,
-      latitude: 3.0685,
-      longitude: 101.6037,
-      priceRange,
-      metadataURI: restaurantForm.metadataURI,
-      score: 88,
-      reportCount: 0,
-      cleaningCountToday: 0,
-      lastCleanedAt: "No logs",
-      tags: ["New"]
-    };
-    setRestaurants((current) => [optimisticRestaurant, ...current]);
-    setSelectedId(optimisticRestaurant.id);
     setRestaurantForm(emptyRestaurantForm);
     setShowRegister(false);
-
-    await insertSupabaseRow("restaurants", {
-      name: optimisticRestaurant.name,
-      area: optimisticRestaurant.area,
-      latitude: restaurantForm.latitude,
-      longitude: restaurantForm.longitude,
-      price_range: optimisticRestaurant.priceRange,
-      metadata_uri: optimisticRestaurant.metadataURI
-    });
   }
 
   async function submitReport(draft: ReportDraft) {
@@ -178,27 +275,7 @@ export function Dashboard() {
       return;
     }
 
-    setRestaurants((current) =>
-      current.map((restaurant) =>
-        restaurant.id === draft.restaurantId
-          ? {
-              ...restaurant,
-              reportCount: restaurant.reportCount + 1,
-              score: Math.max(0, restaurant.score - draft.severity * 3)
-            }
-          : restaurant
-      )
-    );
     setReportTarget(null);
-
-    await insertSupabaseRow("reports", {
-      restaurant_id: draft.restaurantId,
-      report_type: draft.reportType,
-      severity: draft.severity,
-      star_rating: draft.starRating,
-      evidence_uris: draft.evidenceURIs,
-      details_uri: draft.detailsURI
-    });
   }
 
   async function submitCleaningLog(draft: CleaningLogDraft) {
@@ -220,25 +297,7 @@ export function Dashboard() {
       return;
     }
 
-    setRestaurants((current) =>
-      current.map((restaurant) =>
-        restaurant.id === draft.restaurantId
-          ? {
-              ...restaurant,
-              cleaningCountToday: restaurant.cleaningCountToday + 1,
-              lastCleanedAt: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
-              score: Math.min(100, Math.round((restaurant.score + draft.cleanlinessScore) / 2))
-            }
-          : restaurant
-      )
-    );
     setCleaningTarget(null);
-
-    await insertSupabaseRow("cleaning_logs", {
-      restaurant_id: draft.restaurantId,
-      cleanliness_score: draft.cleanlinessScore,
-      evidence_uri: draft.evidenceURI
-    });
   }
 
   return (
@@ -271,7 +330,7 @@ export function Dashboard() {
           <div className="grid gap-3 sm:grid-cols-3">
             <Metric icon={<Store size={19} />} label="Total restaurants" value={totalRestaurantCount} tone="leaf" />
             <Metric icon={<Bug size={19} />} label="Incident reports" value={String(issueCount)} tone="tomato" />
-            <Metric icon={<ClipboardCheck size={19} />} label="Toilet Cleanings today" value={String(cleaningCount)} tone="ocean" />
+            <Metric icon={<ClipboardCheck size={19} />} label="Cleaning logs" value={String(cleaningCount)} tone="ocean" />
           </div>
 
           <div className="grid gap-4 border-y border-steel py-4 md:grid-cols-[1fr_220px_auto]">
@@ -318,6 +377,12 @@ export function Dashboard() {
           {isSuccess ? (
             <div className="rounded-md border border-leaf bg-mint p-3 text-sm text-ink">
               Transaction confirmed.
+            </div>
+          ) : null}
+
+          {isLoadingRestaurants ? (
+            <div className="rounded-md border border-steel bg-white p-3 text-sm text-ink">
+              Loading restaurants from Monad testnet.
             </div>
           ) : null}
 
@@ -396,53 +461,100 @@ export function Dashboard() {
         </div>
 
         <aside className="space-y-4">
-          <section className="rounded-md border border-steel bg-white p-4">
-            <div className="mb-4 flex items-start justify-between gap-3">
-              <div>
-                <p className="flex items-center gap-1 text-sm font-medium text-ocean">
-                  <MapPin size={15} />
-                  {selectedRestaurant.area}
-                </p>
-                <h2 className="text-xl font-semibold text-ink">{selectedRestaurant.name}</h2>
-              </div>
-              <span className={cn("rounded-md px-3 py-2 text-sm font-bold", scoreTone(selectedRestaurant.score))}>
-                {selectedRestaurant.score}
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <Info label="Reports" value={String(selectedRestaurant.reportCount)} />
-              <Info label="Cleanings" value={String(selectedRestaurant.cleaningCountToday)} />
-              <Info label="Last cleaned" value={selectedRestaurant.lastCleanedAt} />
-              <Info label="Price" value={String(selectedRestaurant.priceRange)} />
-            </div>
-
-            <div className="mt-4 flex flex-wrap gap-2">
-              {selectedRestaurant.tags.map((tag) => (
-                <span key={tag} className="rounded-md bg-mint px-2 py-1 text-xs font-medium text-ink">
-                  {tag}
+          {selectedRestaurant ? (
+            <section className="rounded-md border border-steel bg-white p-4">
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div>
+                  <p className="flex items-center gap-1 text-sm font-medium text-ocean">
+                    <MapPin size={15} />
+                    {selectedRestaurant.area}
+                  </p>
+                  <h2 className="text-xl font-semibold text-ink">{selectedRestaurant.name}</h2>
+                </div>
+                <span className={cn("rounded-md px-3 py-2 text-sm font-bold", scoreTone(selectedRestaurant.score))}>
+                  {selectedRestaurant.score}
                 </span>
-              ))}
-            </div>
+              </div>
 
-            <div className="mt-5 grid gap-2">
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <Info label="Reports" value={String(selectedRestaurant.reportCount)} />
+                <Info label="Cleanings" value={String(selectedRestaurant.cleaningCountToday)} />
+                <Info label="Last cleaned" value={selectedRestaurant.lastCleanedAt} />
+                <Info label="Price" value={String(selectedRestaurant.priceRange)} />
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                {selectedRestaurant.tags.map((tag) => (
+                  <span key={tag} className="rounded-md bg-mint px-2 py-1 text-xs font-medium text-ink">
+                    {tag}
+                  </span>
+                ))}
+              </div>
+
+              <div className="mt-5 grid gap-2">
+                <button
+                  type="button"
+                  onClick={() => setReportTarget(selectedRestaurant)}
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-tomato px-4 text-sm font-semibold text-white"
+                >
+                  <Bug size={18} />
+                  Submit review
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCleaningTarget(selectedRestaurant)}
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-leaf px-4 text-sm font-semibold text-white"
+                >
+                  <ClipboardCheck size={18} />
+                  Log cleaning
+                </button>
+              </div>
+            </section>
+          ) : (
+            <section className="rounded-md border border-steel bg-white p-4">
+              <p className="font-semibold text-ink">No on-chain restaurants found</p>
+              <p className="mt-1 text-sm text-ink/60">Register a restaurant to add it to the Monad testnet contract.</p>
+            </section>
+          )}
+
+          <section className="rounded-md border border-steel bg-white p-4">
+            <p className="text-sm font-semibold text-ink">Contract actions</p>
+            <p className="mt-1 break-all text-xs text-ink/60">{crankFoodieAddress}</p>
+            <div className="mt-4 grid gap-2">
               <button
                 type="button"
-                onClick={() => setReportTarget(selectedRestaurant)}
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-tomato px-4 text-sm font-semibold text-white"
+                onClick={() => setShowRegister(true)}
+                disabled={!canWrite}
+                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-steel px-3 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <Bug size={18} />
+                <Plus size={16} />
+                Register restaurant
+              </button>
+              <button
+                type="button"
+                onClick={() => selectedRestaurant && setReportTarget(selectedRestaurant)}
+                disabled={!canWrite || !selectedRestaurant}
+                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-steel px-3 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Bug size={16} />
                 Submit review
               </button>
               <button
                 type="button"
-                onClick={() => setCleaningTarget(selectedRestaurant)}
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-leaf px-4 text-sm font-semibold text-white"
+                onClick={() => selectedRestaurant && setCleaningTarget(selectedRestaurant)}
+                disabled={!canWrite || !selectedRestaurant}
+                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-steel px-3 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <ClipboardCheck size={18} />
-                Log cleaning
+                <ClipboardCheck size={16} />
+                Submit cleaning log
               </button>
             </div>
+            <p className="mt-3 text-xs text-ink/60">
+              {isConnected ? "Wallet connected. Actions write to Monad testnet." : "Connect your wallet to write to Monad testnet."}
+            </p>
+            {restaurantReadError ? (
+              <p className="mt-2 text-xs text-tomato">{restaurantReadError}</p>
+            ) : null}
           </section>
 
           <section className="space-y-3">

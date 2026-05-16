@@ -116,6 +116,44 @@ export const crankFoodieAbi = [
   },
   {
     type: "function",
+    name: "getRestaurant",
+    stateMutability: "view",
+    inputs: [{ name: "restaurantId", type: "uint256" }],
+    outputs: [
+      {
+        name: "",
+        type: "tuple",
+        components: [
+          { name: "id", type: "uint256" },
+          { name: "name", type: "string" },
+          { name: "area", type: "string" },
+          { name: "latitude", type: "string" },
+          { name: "longitude", type: "string" },
+          { name: "priceRange", type: "uint256" },
+          { name: "metadataURI", type: "string" },
+          { name: "active", type: "bool" },
+          { name: "registeredBy", type: "address" },
+          { name: "createdAt", type: "uint256" }
+        ]
+      }
+    ]
+  },
+  {
+    type: "function",
+    name: "getRestaurantReportIds",
+    stateMutability: "view",
+    inputs: [{ name: "restaurantId", type: "uint256" }],
+    outputs: [{ name: "", type: "uint256[]" }]
+  },
+  {
+    type: "function",
+    name: "getRestaurantCleaningLogIds",
+    stateMutability: "view",
+    inputs: [{ name: "restaurantId", type: "uint256" }],
+    outputs: [{ name: "", type: "uint256[]" }]
+  },
+  {
+    type: "function",
     name: "restaurantCount",
     stateMutability: "view",
     inputs: [],

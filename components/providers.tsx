@@ -2,8 +2,8 @@
 
 import "@rainbow-me/rainbowkit/styles.css";
 
-import { RainbowKitProvider, getDefaultConfig, getDefaultWallets } from "@rainbow-me/rainbowkit";
-import { rabbyWallet } from "@rainbow-me/rainbowkit/wallets";
+import { RainbowKitProvider, getDefaultConfig } from "@rainbow-me/rainbowkit";
+import { injectedWallet, rabbyWallet, walletConnectWallet } from "@rainbow-me/rainbowkit/wallets";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { WagmiProvider, http } from "wagmi";
 import { monadTestnet } from "@/lib/chains";
@@ -11,7 +11,6 @@ import { useState } from "react";
 
 const appName = "CrankFoodie";
 const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || "crankfoodie-local";
-const { wallets: defaultWallets } = getDefaultWallets();
 
 const config = getDefaultConfig({
   appName,
@@ -19,10 +18,9 @@ const config = getDefaultConfig({
   chains: [monadTestnet],
   wallets: [
     {
-      ...defaultWallets[0],
-      wallets: [...defaultWallets[0].wallets, rabbyWallet]
-    },
-    ...defaultWallets.slice(1)
+      groupName: "Recommended",
+      wallets: [injectedWallet, rabbyWallet, walletConnectWallet]
+    }
   ],
   transports: {
     [monadTestnet.id]: http()
