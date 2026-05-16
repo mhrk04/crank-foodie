@@ -1,0 +1,36 @@
+@import "mapbox-gl/dist/mapbox-gl.css";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #f7f5ef;
+  color: #17201c;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+.mapboxgl-popup-content {
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: #17201c;
+}
+
+.mapboxgl-ctrl-bottom-left,
+.mapboxgl-ctrl-bottom-right {
+  display: none;
+}

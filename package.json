@@ -1,0 +1,19 @@
+{
+  "name": "crankfoodie",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Immutable restaurant hygiene and food safety reputation system for Monad.",
+  "scripts": {
+    "dev": "npm --workspace frontend run dev",
+    "build": "npm --workspace frontend run build",
+    "lint": "npm --workspace frontend run lint",
+    "compile": "npm --workspace contracts run compile",
+    "test": "npm --workspace contracts run test",
+    "deploy:monad": "npm --workspace contracts run deploy:monad"
+  },
+  "workspaces": [
+    "contracts",
+    "frontend"
+  ]
+}
+
