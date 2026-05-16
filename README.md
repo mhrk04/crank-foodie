@@ -114,9 +114,7 @@ Built with:
 - Mapbox or Google Maps
 
 ## Database
-Optional indexing:
 - Supabase
-- PostgreSQL
 
 ---
 
