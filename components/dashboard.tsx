@@ -231,7 +231,7 @@ export function Dashboard() {
           <div className="grid gap-3 sm:grid-cols-3">
             <Metric icon={<ShieldCheck size={19} />} label="Average hygiene" value={`${averageScore}/100`} tone="leaf" />
             <Metric icon={<Bug size={19} />} label="Incident reports" value={String(issueCount)} tone="tomato" />
-            <Metric icon={<ClipboardCheck size={19} />} label="Cleanings today" value={String(cleaningCount)} tone="ocean" />
+            <Metric icon={<ClipboardCheck size={19} />} label="Toilet Cleanings today" value={String(cleaningCount)} tone="ocean" />
           </div>
 
           <div className="grid gap-4 border-y border-steel py-4 md:grid-cols-[1fr_220px_auto]">

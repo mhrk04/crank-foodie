@@ -21,13 +21,15 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: ${{ matrix.node-version }}
-        cache: 'npm'
-        # cache-dependency-path: package-lock.json # Uncomment when package-lock.json exists
 
     - name: Install dependencies
       run: |
         if [ -f package.json ]; then
-          npm install
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
         else
           echo "No package.json found, skipping npm install"
         fi
