@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { useAccount, usePublicClient, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
 import {
@@ -11,8 +12,7 @@ import {
   MapPin,
   Plus,
   Search,
-  Store,
-  Utensils
+  Store
 } from "lucide-react";
 import { WalletButton } from "@/components/wallet-button";
 import { RestaurantMap } from "@/components/restaurant-map";
@@ -306,8 +306,8 @@ export function Dashboard() {
       <header className="border-b border-steel bg-white">
         <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-md bg-leaf text-white">
-              <Utensils size={22} />
+            <div className="h-11 w-11 overflow-hidden rounded-md border border-steel bg-white">
+              <Image src="/logo.jpg" alt="" width={44} height={44} className="h-full w-full object-cover" priority />
             </div>
             <div>
               <h1 className="text-2xl font-semibold tracking-normal text-ink">CrankFoodie</h1>
