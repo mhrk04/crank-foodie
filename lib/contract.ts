@@ -1,6 +1,7 @@
 import type { Abi } from "viem";
 
-export const crankFoodieAddress = process.env.NEXT_PUBLIC_CRANKFOODIE_CONTRACT_ADDRESS as `0x${string}` | undefined;
+export const crankFoodieAddress = (process.env.NEXT_PUBLIC_CRANKFOODIE_CONTRACT_ADDRESS ||
+  "0x2c14dd42a09a0f32ad9fddaff62c1f85cb56b50e") as `0x${string}`;
 
 export const reportTypeOptions = [
   { label: "Pest object", value: "PestObject", contractValue: 0 },
@@ -12,6 +13,61 @@ export const reportTypeOptions = [
 ] as const;
 
 export const crankFoodieAbi = [
+  {
+    type: "function",
+    name: "getRestaurant",
+    stateMutability: "view",
+    inputs: [{ name: "restaurantId", type: "uint256" }],
+    outputs: [
+      {
+        name: "",
+        type: "tuple",
+        components: [
+          { name: "id", type: "uint256" },
+          { name: "name", type: "string" },
+          { name: "area", type: "string" },
+          { name: "latitude", type: "string" },
+          { name: "longitude", type: "string" },
+          { name: "priceRange", type: "uint256" },
+          { name: "metadataURI", type: "string" },
+          { name: "active", type: "bool" },
+          { name: "registeredBy", type: "address" },
+          { name: "createdAt", type: "uint256" }
+        ]
+      }
+    ]
+  },
+  {
+    type: "function",
+    name: "getReport",
+    stateMutability: "view",
+    inputs: [{ name: "reportId", type: "uint256" }],
+    outputs: [
+      {
+        name: "",
+        type: "tuple",
+        components: [
+          { name: "id", type: "uint256" },
+          { name: "restaurantId", type: "uint256" },
+          { name: "reporter", type: "address" },
+          { name: "reportType", type: "uint8" },
+          { name: "severity", type: "uint8" },
+          { name: "starRating", type: "uint8" },
+          { name: "evidenceURIs", type: "string[]" },
+          { name: "detailsURI", type: "string" },
+          { name: "createdAt", type: "uint256" },
+          { name: "verified", type: "bool" }
+        ]
+      }
+    ]
+  },
+  {
+    type: "function",
+    name: "getRestaurantReportIds",
+    stateMutability: "view",
+    inputs: [{ name: "restaurantId", type: "uint256" }],
+    outputs: [{ name: "", type: "uint256[]" }]
+  },
   {
     type: "function",
     name: "registerRestaurant",
@@ -57,6 +113,44 @@ export const crankFoodieAbi = [
     stateMutability: "view",
     inputs: [{ name: "restaurantId", type: "uint256" }],
     outputs: [{ name: "", type: "uint8" }]
+  },
+  {
+    type: "function",
+    name: "getRestaurant",
+    stateMutability: "view",
+    inputs: [{ name: "restaurantId", type: "uint256" }],
+    outputs: [
+      {
+        name: "",
+        type: "tuple",
+        components: [
+          { name: "id", type: "uint256" },
+          { name: "name", type: "string" },
+          { name: "area", type: "string" },
+          { name: "latitude", type: "string" },
+          { name: "longitude", type: "string" },
+          { name: "priceRange", type: "uint256" },
+          { name: "metadataURI", type: "string" },
+          { name: "active", type: "bool" },
+          { name: "registeredBy", type: "address" },
+          { name: "createdAt", type: "uint256" }
+        ]
+      }
+    ]
+  },
+  {
+    type: "function",
+    name: "getRestaurantReportIds",
+    stateMutability: "view",
+    inputs: [{ name: "restaurantId", type: "uint256" }],
+    outputs: [{ name: "", type: "uint256[]" }]
+  },
+  {
+    type: "function",
+    name: "getRestaurantCleaningLogIds",
+    stateMutability: "view",
+    inputs: [{ name: "restaurantId", type: "uint256" }],
+    outputs: [{ name: "", type: "uint256[]" }]
   },
   {
     type: "function",
