@@ -6,7 +6,6 @@ import { useWaitForTransactionReceipt, useWriteContract } from "wagmi";
 import {
   Bug,
   ClipboardCheck,
-  Database,
   Filter,
   MapPin,
   Plus,
@@ -20,7 +19,7 @@ import { ReportModal } from "@/components/report-modal";
 import { CleaningLogModal } from "@/components/cleaning-log-modal";
 import { crankFoodieAbi, crankFoodieAddress, reportTypeOptions } from "@/lib/contract";
 import { seedRestaurants, supportedAreas } from "@/lib/seed-data";
-import { insertSupabaseRow, isSupabaseConfigured } from "@/lib/supabase";
+import { insertSupabaseRow } from "@/lib/supabase";
 import type { CleaningLogDraft, ReportDraft, Restaurant } from "@/lib/types";
 import { cn, scoreTone } from "@/lib/utils";
 
@@ -217,10 +216,6 @@ export function Dashboard() {
             </div>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <div className="flex items-center gap-2 rounded-md border border-steel px-3 py-2 text-sm">
-              <Database size={16} className={isSupabaseConfigured ? "text-leaf" : "text-amber"} />
-              <span>{isSupabaseConfigured ? "Supabase connected" : "Supabase optional"}</span>
-            </div>
             <WalletButton />
           </div>
         </div>
