@@ -123,7 +123,7 @@ export function Dashboard() {
     }
 
     const optimisticRestaurant: Restaurant = {
-      id: Number((restaurantCount || BigInt(restaurants.length)) + 1n),
+      id: Number((restaurantCount || BigInt(restaurants.length)) + BigInt(1)),
       name: restaurantForm.name,
       area: restaurantForm.area,
       latitude: 3.0685,
