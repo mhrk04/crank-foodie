@@ -15,9 +15,9 @@ contract CrankFoodie {
         uint256 id;
         string name;
         string area;
-        int256 latitude;
-        int256 longitude;
-        uint8 priceRange;
+        string latitude;
+        string longitude;
+        uint256 priceRange;
         string metadataURI;
         bool active;
         address registeredBy;
@@ -108,13 +108,13 @@ contract CrankFoodie {
     function registerRestaurant(
         string calldata name,
         string calldata area,
-        int256 latitude,
-        int256 longitude,
-        uint8 priceRange,
+        string calldata latitude,
+        string calldata longitude,
+        uint256 priceRange,
         string calldata metadataURI
     ) external returns (uint256 restaurantId) {
         if (bytes(name).length == 0) revert EmptyName();
-        if (priceRange == 0 || priceRange > 4) revert InvalidPriceRange();
+        if (priceRange == 0) revert InvalidPriceRange();
 
         restaurantId = ++restaurantCount;
         restaurants[restaurantId] = Restaurant({

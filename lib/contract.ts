@@ -19,9 +19,9 @@ export const crankFoodieAbi = [
     inputs: [
       { name: "name", type: "string" },
       { name: "area", type: "string" },
-      { name: "latitude", type: "int256" },
-      { name: "longitude", type: "int256" },
-      { name: "priceRange", type: "uint8" },
+      { name: "latitude", type: "string" },
+      { name: "longitude", type: "string" },
+      { name: "priceRange", type: "uint256" },
       { name: "metadataURI", type: "string" }
     ],
     outputs: [{ name: "restaurantId", type: "uint256" }]
@@ -79,7 +79,3 @@ export const crankFoodieAbi = [
     ]
   }
 ] as const satisfies Abi;
-
-export function scaleCoordinate(value: number) {
-  return BigInt(Math.round(value * 1_000_000));
-}

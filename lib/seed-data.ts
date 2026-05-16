@@ -7,7 +7,7 @@ export const seedRestaurants: Restaurant[] = [
     area: "Bandar Sunway",
     latitude: 3.0685,
     longitude: 101.6037,
-    priceRange: 2,
+    priceRange: 10,
     score: 86,
     reportCount: 11,
     cleaningCountToday: 4,
@@ -20,7 +20,7 @@ export const seedRestaurants: Restaurant[] = [
     area: "Sunway Square",
     latitude: 3.0709,
     longitude: 101.607,
-    priceRange: 1,
+    priceRange: 8,
     score: 71,
     reportCount: 22,
     cleaningCountToday: 2,
@@ -33,7 +33,7 @@ export const seedRestaurants: Restaurant[] = [
     area: "SS15",
     latitude: 3.0744,
     longitude: 101.5888,
-    priceRange: 1,
+    priceRange: 8,
     score: 92,
     reportCount: 5,
     cleaningCountToday: 5,
@@ -46,7 +46,7 @@ export const seedRestaurants: Restaurant[] = [
     area: "Taylor's University",
     latitude: 3.0624,
     longitude: 101.6169,
-    priceRange: 2,
+    priceRange: 10,
     score: 80,
     reportCount: 9,
     cleaningCountToday: 3,
@@ -63,4 +63,3 @@ export const supportedAreas = [
   "SS15",
   "Taylor's University"
 ];
-

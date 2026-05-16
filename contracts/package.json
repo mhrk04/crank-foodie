@@ -6,10 +6,12 @@
   "scripts": {
     "compile": "hardhat compile",
     "test": "hardhat test",
-    "deploy:monad": "hardhat run scripts/deploy.ts --network monadTestnet"
+    "deploy:monad": "hardhat run scripts/deploy.ts --network monadTestnet",
+    "verify:monad": "hardhat verify --network monadTestnet"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-viem": "^3.0.1",
+    "@nomicfoundation/hardhat-verify": "^3.0.6",
     "@types/chai": "^4.3.16",
     "@types/mocha": "^10.0.6",
     "@types/node": "^20.11.30",

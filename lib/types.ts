@@ -12,7 +12,7 @@ export type Restaurant = {
   area: string;
   latitude: number;
   longitude: number;
-  priceRange: 1 | 2 | 3 | 4;
+  priceRange: number;
   metadataURI?: string;
   score: number;
   reportCount: number;
