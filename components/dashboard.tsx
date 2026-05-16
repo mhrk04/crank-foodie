@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
@@ -21,7 +21,7 @@ import { CleaningLogModal } from "@/components/cleaning-log-modal";
 import { crankFoodieAbi, crankFoodieAddress, reportTypeOptions } from "@/lib/contract";
 import { supportedAreas } from "@/lib/seed-data";
 import type { CleaningLogDraft, ReportDraft, Restaurant } from "@/lib/types";
-import { cn, scoreTone } from "@/lib/utils";
+import { cn, formatScore, scoreTone } from "@/lib/utils";
 
 const emptyRestaurantForm = {
   name: "",
@@ -31,6 +31,9 @@ const emptyRestaurantForm = {
   priceRange: "10",
   metadataURI: ""
 };
+
+const RPC_READ_SPACING_MS = 90;
+const RPC_RATE_LIMIT_BACKOFF_MS = 1_250;
 
 type OnChainRestaurant = Record<string, unknown> & readonly unknown[];
 
@@ -58,6 +61,17 @@ function coordinatesFromContract(latitudeValue: string, longitudeValue: string, 
   return [3.0685 + latOffset, 101.6037 + lngOffset] as const;
 }
 
+function sleep(milliseconds: number) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, milliseconds);
+  });
+}
+
+function isRateLimitError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.toLowerCase().includes("rate") || message.includes("429") || message.includes("-32011");
+}
+
 export function Dashboard() {
   const [selectedId, setSelectedId] = useState(0);
   const [query, setQuery] = useState("");
@@ -70,7 +84,9 @@ export function Dashboard() {
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
   const [isLoadingRestaurants, setIsLoadingRestaurants] = useState(true);
   const [restaurantReadError, setRestaurantReadError] = useState("");
+  const [scoreWarning, setScoreWarning] = useState("");
   const [refreshNonce, setRefreshNonce] = useState(0);
+  const lastConfirmedHashRef = useRef<`0x${string}` | undefined>(undefined);
 
   const { isConnected } = useAccount();
   const publicClient = usePublicClient();
@@ -97,10 +113,11 @@ export function Dashboard() {
   const cleaningCount = restaurants.reduce((sum, restaurant) => sum + restaurant.cleaningCountToday, 0);
 
   useEffect(() => {
-    if (isSuccess) {
+    if (hash && isSuccess && lastConfirmedHashRef.current !== hash) {
+      lastConfirmedHashRef.current = hash;
       setRefreshNonce((value) => value + 1);
     }
-  }, [isSuccess]);
+  }, [hash, isSuccess]);
 
   useEffect(() => {
     if (!publicClient || !hasContract) {
@@ -110,14 +127,39 @@ export function Dashboard() {
 
     const client = publicClient;
     let isCancelled = false;
+    let lastReadStartedAt = 0;
+
+    async function waitForReadSlot() {
+      const elapsed = Date.now() - lastReadStartedAt;
+      if (elapsed < RPC_READ_SPACING_MS) {
+        await sleep(RPC_READ_SPACING_MS - elapsed);
+      }
+      lastReadStartedAt = Date.now();
+    }
+
+    async function readContractWithRetry<T>(request: Parameters<typeof client.readContract>[0]) {
+      try {
+        await waitForReadSlot();
+        return (await client.readContract(request)) as T;
+      } catch (error) {
+        if (!isRateLimitError(error)) {
+          throw error;
+        }
+
+        await sleep(RPC_RATE_LIMIT_BACKOFF_MS);
+        await waitForReadSlot();
+        return (await client.readContract(request)) as T;
+      }
+    }
 
     async function loadRestaurants() {
       setIsLoadingRestaurants(true);
       setRestaurantReadError("");
+      setScoreWarning("");
 
       try {
         const count = Number(
-          await client.readContract({
+          await readContractWithRetry<bigint>({
             address: crankFoodieAddress,
             abi: crankFoodieAbi,
             functionName: "restaurantCount"
@@ -131,76 +173,76 @@ export function Dashboard() {
           return;
         }
 
-        const restaurantResults = await Promise.allSettled(
-          Array.from({ length: count }, async (_, index) => {
-            const restaurantId = BigInt(index + 1);
-            const item = (await client.readContract({
+        const nextRestaurants: Restaurant[] = [];
+        const scoreReadFailures: number[] = [];
+
+        for (let index = 0; index < count; index++) {
+          const restaurantId = BigInt(index + 1);
+
+          try {
+            const item = await readContractWithRetry<OnChainRestaurant>({
               address: crankFoodieAddress,
               abi: crankFoodieAbi,
               functionName: "getRestaurant",
               args: [restaurantId]
-            })) as unknown as OnChainRestaurant;
+            });
 
-            const [scoreResult, reportIdsResult, cleaningIdsResult] = await Promise.allSettled([
-              client.readContract({
-                address: crankFoodieAddress,
-                abi: crankFoodieAbi,
-                functionName: "calculateHygieneScore",
-                args: [restaurantId]
-              }),
-              client.readContract({
-                address: crankFoodieAddress,
-                abi: crankFoodieAbi,
-                functionName: "getRestaurantReportIds",
-                args: [restaurantId]
-              }),
-              client.readContract({
-                address: crankFoodieAddress,
-                abi: crankFoodieAbi,
-                functionName: "getRestaurantCleaningLogIds",
-                args: [restaurantId]
-              })
-            ]);
+            const parsedId = Number(readStructValue<bigint>(item, "id", 0) || restaurantId);
+            const rawLatitude = String(readStructValue<string>(item, "latitude", 3) || "");
+            const rawLongitude = String(readStructValue<string>(item, "longitude", 4) || "");
+            const [latitude, longitude] = coordinatesFromContract(rawLatitude, rawLongitude, nextRestaurants.length);
 
-            return { item, index, scoreResult, reportIdsResult, cleaningIdsResult };
-          })
-        );
+            let score: number | null = null;
+            try {
+              score = Number(
+                await readContractWithRetry<number>({
+                  address: crankFoodieAddress,
+                  abi: crankFoodieAbi,
+                  functionName: "calculateHygieneScore",
+                  args: [restaurantId]
+                })
+              );
+            } catch {
+              scoreReadFailures.push(parsedId);
+            }
 
-        const nextRestaurants = restaurantResults.reduce<Restaurant[]>((items, result) => {
-          if (result.status !== "fulfilled") {
-            return items;
+            const reportIds = await readContractWithRetry<bigint[]>({
+              address: crankFoodieAddress,
+              abi: crankFoodieAbi,
+              functionName: "getRestaurantReportIds",
+              args: [restaurantId]
+            });
+            const cleaningIds = await readContractWithRetry<bigint[]>({
+              address: crankFoodieAddress,
+              abi: crankFoodieAbi,
+              functionName: "getRestaurantCleaningLogIds",
+              args: [restaurantId]
+            });
+
+            nextRestaurants.push({
+              id: parsedId,
+              name: String(readStructValue<string>(item, "name", 1) || `Restaurant ${parsedId}`),
+              area: String(readStructValue<string>(item, "area", 2) || "Monad Testnet"),
+              latitude,
+              longitude,
+              priceRange: Number(readStructValue<bigint>(item, "priceRange", 5) || BigInt(0)),
+              metadataURI: String(readStructValue<string>(item, "metadataURI", 6) || ""),
+              score,
+              reportCount: reportIds.length,
+              cleaningCountToday: cleaningIds.length,
+              lastCleanedAt: cleaningIds.length > 0 ? `${cleaningIds.length} on-chain logs` : "No logs",
+              tags: ["On-chain"]
+            });
+          } catch {
+            continue;
           }
-
-          const { item, index, scoreResult, reportIdsResult, cleaningIdsResult } = result.value;
-          const parsedId = Number(readStructValue<bigint>(item, "id", 0) || BigInt(index + 1));
-          const rawLatitude = String(readStructValue<string>(item, "latitude", 3) || "");
-          const rawLongitude = String(readStructValue<string>(item, "longitude", 4) || "");
-          const [latitude, longitude] = coordinatesFromContract(rawLatitude, rawLongitude, items.length);
-          const reportIds =
-            reportIdsResult.status === "fulfilled" && Array.isArray(reportIdsResult.value) ? reportIdsResult.value : [];
-          const cleaningIds =
-            cleaningIdsResult.status === "fulfilled" && Array.isArray(cleaningIdsResult.value) ? cleaningIdsResult.value : [];
-
-          items.push({
-            id: parsedId,
-            name: String(readStructValue<string>(item, "name", 1) || `Restaurant ${parsedId}`),
-            area: String(readStructValue<string>(item, "area", 2) || "Monad Testnet"),
-            latitude,
-            longitude,
-            priceRange: Number(readStructValue<bigint>(item, "priceRange", 5) || BigInt(0)),
-            metadataURI: String(readStructValue<string>(item, "metadataURI", 6) || ""),
-            score: scoreResult.status === "fulfilled" ? Number(scoreResult.value) : 88,
-            reportCount: reportIds.length,
-            cleaningCountToday: cleaningIds.length,
-            lastCleanedAt: cleaningIds.length > 0 ? `${cleaningIds.length} on-chain logs` : "No logs",
-            tags: ["On-chain"]
-          });
-
-          return items;
-        }, []);
+        }
 
         if (!isCancelled) {
           setRestaurants(nextRestaurants);
+          if (scoreReadFailures.length > 0) {
+            setScoreWarning(`Hygiene score unavailable for restaurant #${scoreReadFailures.join(", #")} — showing as empty.`);
+          }
         }
       } catch (error) {
         if (!isCancelled) {
@@ -411,6 +453,12 @@ export function Dashboard() {
             </div>
           ) : null}
 
+          {scoreWarning ? (
+            <div className="rounded-md border border-amber bg-amber-50 p-3 text-sm text-ink">
+              {scoreWarning}
+            </div>
+          ) : null}
+
           {showRegister ? (
             <form onSubmit={registerRestaurant} className="grid gap-4 rounded-md border border-steel bg-white p-4 md:grid-cols-2">
               <Field label="Restaurant name">
@@ -497,7 +545,7 @@ export function Dashboard() {
                   <h2 className="text-xl font-semibold text-ink">{selectedRestaurant.name}</h2>
                 </div>
                 <span className={cn("rounded-md px-3 py-2 text-sm font-bold", scoreTone(selectedRestaurant.score))}>
-                  {selectedRestaurant.score}
+                  {formatScore(selectedRestaurant.score)}
                 </span>
               </div>
 
@@ -560,7 +608,7 @@ export function Dashboard() {
                     <p className="text-sm text-ink/70">{restaurant.area}</p>
                   </div>
                   <span className={cn("rounded-md px-2 py-1 text-xs font-bold", scoreTone(restaurant.score))}>
-                    {restaurant.score}
+                    {formatScore(restaurant.score)}
                   </span>
                 </div>
               </button>

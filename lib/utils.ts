@@ -4,10 +4,15 @@ export function cn(...inputs: ClassValue[]) {
   return clsx(inputs);
 }
 
-export function scoreTone(score: number) {
+export function scoreTone(score: number | null | undefined) {
+  if (typeof score !== "number") return "bg-steel text-ink";
   if (score >= 85) return "bg-leaf text-white";
   if (score >= 70) return "bg-amber text-ink";
   return "bg-tomato text-white";
+}
+
+export function formatScore(score: number | null | undefined) {
+  return typeof score === "number" ? String(score) : "N/A";
 }
 
 export function ipfsToGateway(uri: string) {

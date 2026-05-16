@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import type { Restaurant } from "@/lib/types";
-import { scoreTone } from "@/lib/utils";
+import { formatScore, scoreTone } from "@/lib/utils";
 
 type RestaurantMapProps = {
   restaurants: Restaurant[];
@@ -51,12 +51,12 @@ export function RestaurantMap({ restaurants, selectedId, onSelect }: RestaurantM
       const el = document.createElement("button");
       el.type = "button";
       el.className = `h-8 w-8 rounded-full border-2 border-white text-xs font-bold shadow-lg ${scoreTone(restaurant.score)} ${restaurant.id === selectedId ? "ring-4 ring-amber" : ""}`;
-      el.textContent = String(restaurant.score);
+      el.textContent = formatScore(restaurant.score);
       el.addEventListener("click", () => onSelect(restaurant));
 
       return new mapboxgl.Marker({ element: el })
         .setLngLat([restaurant.longitude, restaurant.latitude])
-        .setPopup(new mapboxgl.Popup({ offset: 18 }).setHTML(`<strong>${restaurant.name}</strong><br/>Score ${restaurant.score}/100`))
+        .setPopup(new mapboxgl.Popup({ offset: 18 }).setHTML(`<strong>${restaurant.name}</strong><br/>Score ${formatScore(restaurant.score)}/100`))
         .addTo(mapRef.current!);
     });
   }, [restaurants, selectedId, onSelect]);
@@ -77,7 +77,7 @@ export function RestaurantMap({ restaurants, selectedId, onSelect }: RestaurantM
             }}
             aria-label={restaurant.name}
           >
-            {restaurant.score}
+            {formatScore(restaurant.score)}
           </button>
         ))}
         <div className="absolute bottom-4 left-4 right-4 rounded-md bg-white/90 p-3 text-sm text-ink shadow">
