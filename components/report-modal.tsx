@@ -34,12 +34,12 @@ export function ReportModal({ restaurant, canWrite, isSubmitting, onClose, onSub
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end bg-ink/45 p-3 sm:items-center sm:justify-center">
-      <form onSubmit={submit} className="w-full max-w-xl rounded-md bg-paper p-5 shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-end overflow-y-auto bg-ink/45 p-3 sm:items-center sm:justify-center">
+      <form onSubmit={submit} className="max-h-[calc(100vh-1.5rem)] w-full max-w-xl overflow-y-auto rounded-md bg-paper p-5 shadow-2xl">
         <div className="mb-5 flex items-start justify-between gap-4">
           <div>
             <p className="text-sm font-medium text-ocean">{restaurant.area}</p>
-            <h2 className="text-xl font-semibold text-ink">Submit report for {restaurant.name}</h2>
+            <h2 className="text-xl font-semibold text-ink">Submit review for {restaurant.name}</h2>
           </div>
           <button type="button" onClick={onClose} className="rounded-md p-2 text-ink hover:bg-steel" aria-label="Close">
             <X size={20} />
@@ -113,7 +113,7 @@ export function ReportModal({ restaurant, canWrite, isSubmitting, onClose, onSub
             disabled={!canWrite || isSubmitting}
             className="min-h-11 rounded-md bg-leaf px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {isSubmitting ? "Submitting" : "Submit on-chain"}
+            {isSubmitting ? "Submitting" : "Submit"}
           </button>
         </div>
       </form>

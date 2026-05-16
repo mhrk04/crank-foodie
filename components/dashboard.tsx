@@ -1,8 +1,9 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { useWaitForTransactionReceipt, useWriteContract } from "wagmi";
+import Link from "next/link";
+import { useAccount, useReadContract, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
 import {
   Bug,
   ClipboardCheck,
@@ -10,7 +11,7 @@ import {
   MapPin,
   Plus,
   Search,
-  ShieldCheck,
+  Store,
   Utensils
 } from "lucide-react";
 import { WalletButton } from "@/components/wallet-button";
@@ -43,10 +44,24 @@ export function Dashboard() {
   const [cleaningTarget, setCleaningTarget] = useState<Restaurant | null>(null);
   const [notice, setNotice] = useState("");
 
-  const { data: hash, isPending, writeContract } = useWriteContract();
+  const { isConnected } = useAccount();
+  const { data: hash, isPending, writeContractAsync } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+  const {
+    data: restaurantCount,
+    refetch: refetchRestaurantCount,
+    isError: isRestaurantCountError
+  } = useReadContract({
+    address: crankFoodieAddress,
+    abi: crankFoodieAbi,
+    functionName: "restaurantCount",
+    query: {
+      refetchInterval: 15000
+    }
+  });
 
-  const canWrite = Boolean(crankFoodieAddress);
+  const hasContract = Boolean(crankFoodieAddress);
+  const canWrite = hasContract && isConnected;
   const isSubmitting = isPending || isConfirming;
 
   const filteredRestaurants = useMemo(() => {
@@ -60,9 +75,15 @@ export function Dashboard() {
   }, [area, query, restaurants]);
 
   const selectedRestaurant = restaurants.find((restaurant) => restaurant.id === selectedId) || restaurants[0];
-  const averageScore = Math.round(restaurants.reduce((sum, restaurant) => sum + restaurant.score, 0) / restaurants.length);
+  const totalRestaurantCount = restaurantCount !== undefined ? restaurantCount.toString() : String(restaurants.length);
   const issueCount = restaurants.reduce((sum, restaurant) => sum + restaurant.reportCount, 0);
   const cleaningCount = restaurants.reduce((sum, restaurant) => sum + restaurant.cleaningCountToday, 0);
+
+  useEffect(() => {
+    if (isSuccess) {
+      refetchRestaurantCount();
+    }
+  }, [isSuccess, refetchRestaurantCount]);
 
   function selectRestaurant(restaurant: Restaurant) {
     setSelectedId(restaurant.id);
@@ -70,8 +91,8 @@ export function Dashboard() {
 
   async function registerRestaurant(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!canWrite || !crankFoodieAddress) {
-      setNotice("Add NEXT_PUBLIC_CRANKFOODIE_CONTRACT_ADDRESS after deployment to enable writes.");
+    if (!canWrite) {
+      setNotice(isConnected ? "Contract address is not configured." : "Connect your wallet to register a restaurant.");
       return;
     }
 
@@ -81,22 +102,28 @@ export function Dashboard() {
       return;
     }
 
-    writeContract({
-      address: crankFoodieAddress,
-      abi: crankFoodieAbi,
-      functionName: "registerRestaurant",
-      args: [
-        restaurantForm.name,
-        restaurantForm.area,
-        restaurantForm.latitude,
-        restaurantForm.longitude,
-        BigInt(priceRange),
-        restaurantForm.metadataURI
-      ]
-    });
+    try {
+      setNotice("");
+      await writeContractAsync({
+        address: crankFoodieAddress,
+        abi: crankFoodieAbi,
+        functionName: "registerRestaurant",
+        args: [
+          restaurantForm.name,
+          restaurantForm.area,
+          restaurantForm.latitude,
+          restaurantForm.longitude,
+          BigInt(priceRange),
+          restaurantForm.metadataURI
+        ]
+      });
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Restaurant registration was not submitted.");
+      return;
+    }
 
     const optimisticRestaurant: Restaurant = {
-      id: restaurants.length + 1,
+      id: Number((restaurantCount || BigInt(restaurants.length)) + 1n),
       name: restaurantForm.name,
       area: restaurantForm.area,
       latitude: 3.0685,
@@ -125,25 +152,31 @@ export function Dashboard() {
   }
 
   async function submitReport(draft: ReportDraft) {
-    if (!canWrite || !crankFoodieAddress) {
-      setNotice("Deploy the contract and set its address before submitting reports.");
+    if (!canWrite) {
+      setNotice(isConnected ? "Contract address is not configured." : "Connect your wallet to submit a review.");
       return;
     }
 
     const option = reportTypeOptions.find((item) => item.value === draft.reportType);
-    writeContract({
-      address: crankFoodieAddress,
-      abi: crankFoodieAbi,
-      functionName: "submitReport",
-      args: [
-        BigInt(draft.restaurantId),
-        option?.contractValue || 0,
-        draft.severity,
-        draft.starRating,
-        draft.evidenceURIs,
-        draft.detailsURI
-      ]
-    });
+    try {
+      setNotice("");
+      await writeContractAsync({
+        address: crankFoodieAddress,
+        abi: crankFoodieAbi,
+        functionName: "submitReport",
+        args: [
+          BigInt(draft.restaurantId),
+          option?.contractValue || 0,
+          draft.severity,
+          draft.starRating,
+          draft.evidenceURIs,
+          draft.detailsURI
+        ]
+      });
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Review was not submitted.");
+      return;
+    }
 
     setRestaurants((current) =>
       current.map((restaurant) =>
@@ -169,17 +202,23 @@ export function Dashboard() {
   }
 
   async function submitCleaningLog(draft: CleaningLogDraft) {
-    if (!canWrite || !crankFoodieAddress) {
-      setNotice("Deploy the contract and set its address before submitting cleaning logs.");
+    if (!canWrite) {
+      setNotice(isConnected ? "Contract address is not configured." : "Connect your wallet to submit a cleaning log.");
       return;
     }
 
-    writeContract({
-      address: crankFoodieAddress,
-      abi: crankFoodieAbi,
-      functionName: "submitCleaningLog",
-      args: [BigInt(draft.restaurantId), draft.cleanlinessScore, draft.evidenceURI]
-    });
+    try {
+      setNotice("");
+      await writeContractAsync({
+        address: crankFoodieAddress,
+        abi: crankFoodieAbi,
+        functionName: "submitCleaningLog",
+        args: [BigInt(draft.restaurantId), draft.cleanlinessScore, draft.evidenceURI]
+      });
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Cleaning log was not submitted.");
+      return;
+    }
 
     setRestaurants((current) =>
       current.map((restaurant) =>
@@ -212,10 +251,16 @@ export function Dashboard() {
             </div>
             <div>
               <h1 className="text-2xl font-semibold tracking-normal text-ink">CrankFoodie</h1>
-              <p className="text-sm text-ink/70">Monad hygiene ledger for Subang Jaya and Bandar Sunway.</p>
+              <p className="text-sm text-ink/70">Restaurants Reviewer around Subang Jaya.</p>
             </div>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <Link
+              href="/reports"
+              className="inline-flex min-h-10 items-center justify-center rounded-md border border-steel px-4 text-sm font-semibold text-ink hover:border-leaf"
+            >
+              View reviews
+            </Link>
             <WalletButton />
           </div>
         </div>
@@ -224,7 +269,7 @@ export function Dashboard() {
       <section className="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[1fr_360px] lg:px-8">
         <div className="space-y-6">
           <div className="grid gap-3 sm:grid-cols-3">
-            <Metric icon={<ShieldCheck size={19} />} label="Average hygiene" value={`${averageScore}/100`} tone="leaf" />
+            <Metric icon={<Store size={19} />} label="Total restaurants" value={totalRestaurantCount} tone="leaf" />
             <Metric icon={<Bug size={19} />} label="Incident reports" value={String(issueCount)} tone="tomato" />
             <Metric icon={<ClipboardCheck size={19} />} label="Toilet Cleanings today" value={String(cleaningCount)} tone="ocean" />
           </div>
@@ -342,6 +387,7 @@ export function Dashboard() {
                 >
                   {isSubmitting ? "Submitting" : "Register on-chain"}
                 </button>
+                {!isConnected ? <p className="mt-2 text-xs text-ink/60">Connect your wallet to register on Monad testnet.</p> : null}
               </div>
             </form>
           ) : null}
@@ -386,7 +432,7 @@ export function Dashboard() {
                 className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-tomato px-4 text-sm font-semibold text-white"
               >
                 <Bug size={18} />
-                Report issue
+                Submit review
               </button>
               <button
                 type="button"
