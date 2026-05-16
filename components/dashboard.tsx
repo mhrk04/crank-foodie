@@ -451,7 +451,7 @@ export function Dashboard() {
                   disabled={!canWrite || isSubmitting}
                   className="min-h-11 rounded-md bg-leaf px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {isSubmitting ? "Submitting" : "Register on-chain"}
+                  {isSubmitting ? "Submitting" : "Register Restaurant"}
                 </button>
                 {!isConnected ? <p className="mt-2 text-xs text-ink/60">Connect your wallet to register on Monad testnet.</p> : null}
               </div>
