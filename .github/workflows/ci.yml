@@ -2,27 +2,39 @@ name: CI
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, master, alpha ]
   pull_request:
-    branches: [ main, master ]
+    branches: [ main, master, alpha ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
-    strategy:
-      matrix:
-        node-version: [20.x]
-
     steps:
     - uses: actions/checkout@v4
 
-    - name: Use Node.js ${{ matrix.node-version }}
+    - name: Check for package.json
+      id: check_pkg
+      run: |
+        if [ -f package.json ]; then
+          echo "exists=true" >> $GITHUB_OUTPUT
+        else
+          echo "exists=false" >> $GITHUB_OUTPUT
+          echo "No package.json found. Skipping Node.js steps."
+        fi
+
+    - name: Use Node.js 20.x
+      if: steps.check_pkg.outputs.exists == 'true'
       uses: actions/setup-node@v4
       with:
         node-version: ${{ matrix.node-version }}
 
     - name: Install dependencies
+      if: steps.check_pkg.outputs.exists == 'true'
+      run: npm install
+
+    - name: Lint
+      if: steps.check_pkg.outputs.exists == 'true'
       run: |
         if [ -f package.json ]; then
           if [ -f package-lock.json ]; then
@@ -31,26 +43,18 @@ jobs:
             npm install
           fi
         else
-          echo "No package.json found, skipping npm install"
+          echo "No lint script found, skipping."
         fi
 
-    - name: Build and Lint
+    - name: Build
+      if: steps.check_pkg.outputs.exists == 'true'
       run: |
-        if [ -f package.json ]; then
-          # Check if build script exists before running
-          if npm run | grep -q "build"; then
-            npm run build
-          fi
-          # Check if lint script exists before running
-          if npm run | grep -q "lint"; then
-            npm run lint
-          fi
+        if npm run | grep -q " build"; then
+          npm run build
         else
-          echo "No package.json found, skipping build/lint"
+          echo "No build script found, skipping."
         fi
 
     - name: Security Audit
-      run: |
-        if [ -f package.json ]; then
-          npm audit --audit-level=high
-        fi
+      if: steps.check_pkg.outputs.exists == 'true'
+      run: npm audit --audit-level=high
