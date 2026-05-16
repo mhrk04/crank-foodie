@@ -518,45 +518,6 @@ export function Dashboard() {
             </section>
           )}
 
-          <section className="rounded-md border border-steel bg-white p-4">
-            <p className="text-sm font-semibold text-ink">Contract actions</p>
-            <p className="mt-1 break-all text-xs text-ink/60">{crankFoodieAddress}</p>
-            <div className="mt-4 grid gap-2">
-              <button
-                type="button"
-                onClick={() => setShowRegister(true)}
-                disabled={!canWrite}
-                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-steel px-3 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <Plus size={16} />
-                Register restaurant
-              </button>
-              <button
-                type="button"
-                onClick={() => selectedRestaurant && setReportTarget(selectedRestaurant)}
-                disabled={!canWrite || !selectedRestaurant}
-                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-steel px-3 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <Bug size={16} />
-                Submit review
-              </button>
-              <button
-                type="button"
-                onClick={() => selectedRestaurant && setCleaningTarget(selectedRestaurant)}
-                disabled={!canWrite || !selectedRestaurant}
-                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-steel px-3 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <ClipboardCheck size={16} />
-                Submit cleaning log
-              </button>
-            </div>
-            <p className="mt-3 text-xs text-ink/60">
-              {isConnected ? "Wallet connected. Actions write to Monad testnet." : "Connect your wallet to write to Monad testnet."}
-            </p>
-            {restaurantReadError ? (
-              <p className="mt-2 text-xs text-tomato">{restaurantReadError}</p>
-            ) : null}
-          </section>
 
           <section className="space-y-3">
             {filteredRestaurants.map((restaurant) => (
