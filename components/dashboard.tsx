@@ -110,6 +110,7 @@ export function Dashboard() {
       return;
     }
 
+    const client = publicClient;
     let isCancelled = false;
 
     async function loadRestaurants() {
@@ -123,7 +124,7 @@ export function Dashboard() {
           let item: OnChainRestaurant;
 
           try {
-            item = (await publicClient.readContract({
+            item = (await client.readContract({
               address: crankFoodieAddress,
               abi: crankFoodieAbi,
               functionName: "getRestaurant",
@@ -134,19 +135,19 @@ export function Dashboard() {
           }
 
           const [scoreResult, reportIdsResult, cleaningIdsResult] = await Promise.allSettled([
-            publicClient.readContract({
+            client.readContract({
               address: crankFoodieAddress,
               abi: crankFoodieAbi,
               functionName: "calculateHygieneScore",
               args: [BigInt(id)]
             }),
-            publicClient.readContract({
+            client.readContract({
               address: crankFoodieAddress,
               abi: crankFoodieAbi,
               functionName: "getRestaurantReportIds",
               args: [BigInt(id)]
             }),
-            publicClient.readContract({
+            client.readContract({
               address: crankFoodieAddress,
               abi: crankFoodieAbi,
               functionName: "getRestaurantCleaningLogIds",
