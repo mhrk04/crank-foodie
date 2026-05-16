@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { HardhatUserConfig } from "hardhat/config";
-import "@nomicfoundation/hardhat-toolbox-viem";
+import "@nomicfoundation/hardhat-viem";
 
 const monadRpcUrl = process.env.MONAD_TESTNET_RPC_URL || process.env.MONAD_RPC_URL || "https://testnet-rpc.monad.xyz";
 const monadChainId = Number(process.env.MONAD_TESTNET_CHAIN_ID || 10143);
