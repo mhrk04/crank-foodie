@@ -14,7 +14,7 @@ export type Restaurant = {
   longitude: number;
   priceRange: number;
   metadataURI?: string;
-  score: number;
+  score: number | null;
   reportCount: number;
   cleaningCountToday: number;
   lastCleanedAt: string;

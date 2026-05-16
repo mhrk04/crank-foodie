@@ -29,6 +29,6 @@ describe("CrankFoodie", function () {
     expect(report.starRating).to.equal(2);
     expect(report.evidenceURIs).to.deep.equal(["ipfs://evidence-a", "ipfs://evidence-b"]);
     expect(cleaningIds).to.deep.equal([1n]);
-    expect(score).to.be.lessThanOrEqual(100);
+    expect(score).to.equal(70);
   });
 });
