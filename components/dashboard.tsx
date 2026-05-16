@@ -1,7 +1,8 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { useAccount, usePublicClient, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
 import {
@@ -11,8 +12,7 @@ import {
   MapPin,
   Plus,
   Search,
-  Store,
-  Utensils
+  Store
 } from "lucide-react";
 import { WalletButton } from "@/components/wallet-button";
 import { RestaurantMap } from "@/components/restaurant-map";
@@ -33,8 +33,6 @@ const emptyRestaurantForm = {
 };
 
 type OnChainRestaurant = Record<string, unknown> & readonly unknown[];
-
-const restaurantRefetchIntervalMs = 15000;
 
 function readStructValue<T>(item: OnChainRestaurant, key: string, index: number) {
   return (item[key] ?? item[index]) as T | undefined;
@@ -114,56 +112,76 @@ export function Dashboard() {
     let isCancelled = false;
 
     async function loadRestaurants() {
-      setIsLoadingRestaurants((current) => current || restaurants.length === 0);
+      setIsLoadingRestaurants(true);
       setRestaurantReadError("");
 
       try {
-        const nextRestaurants: Restaurant[] = [];
+        const count = Number(
+          await client.readContract({
+            address: crankFoodieAddress,
+            abi: crankFoodieAbi,
+            functionName: "restaurantCount"
+          })
+        );
 
-        for (let id = 1; ; id += 1) {
-          let item: OnChainRestaurant;
+        if (count === 0) {
+          if (!isCancelled) {
+            setRestaurants([]);
+          }
+          return;
+        }
 
-          try {
-            item = (await client.readContract({
+        const restaurantResults = await Promise.allSettled(
+          Array.from({ length: count }, async (_, index) => {
+            const restaurantId = BigInt(index + 1);
+            const item = (await client.readContract({
               address: crankFoodieAddress,
               abi: crankFoodieAbi,
               functionName: "getRestaurant",
-              args: [BigInt(id)]
+              args: [restaurantId]
             })) as unknown as OnChainRestaurant;
-          } catch {
-            break;
+
+            const [scoreResult, reportIdsResult, cleaningIdsResult] = await Promise.allSettled([
+              client.readContract({
+                address: crankFoodieAddress,
+                abi: crankFoodieAbi,
+                functionName: "calculateHygieneScore",
+                args: [restaurantId]
+              }),
+              client.readContract({
+                address: crankFoodieAddress,
+                abi: crankFoodieAbi,
+                functionName: "getRestaurantReportIds",
+                args: [restaurantId]
+              }),
+              client.readContract({
+                address: crankFoodieAddress,
+                abi: crankFoodieAbi,
+                functionName: "getRestaurantCleaningLogIds",
+                args: [restaurantId]
+              })
+            ]);
+
+            return { item, index, scoreResult, reportIdsResult, cleaningIdsResult };
+          })
+        );
+
+        const nextRestaurants = restaurantResults.reduce<Restaurant[]>((items, result) => {
+          if (result.status !== "fulfilled") {
+            return items;
           }
 
-          const [scoreResult, reportIdsResult, cleaningIdsResult] = await Promise.allSettled([
-            client.readContract({
-              address: crankFoodieAddress,
-              abi: crankFoodieAbi,
-              functionName: "calculateHygieneScore",
-              args: [BigInt(id)]
-            }),
-            client.readContract({
-              address: crankFoodieAddress,
-              abi: crankFoodieAbi,
-              functionName: "getRestaurantReportIds",
-              args: [BigInt(id)]
-            }),
-            client.readContract({
-              address: crankFoodieAddress,
-              abi: crankFoodieAbi,
-              functionName: "getRestaurantCleaningLogIds",
-              args: [BigInt(id)]
-            })
-          ]);
-
-          const parsedId = Number(readStructValue<bigint>(item, "id", 0) || BigInt(id));
+          const { item, index, scoreResult, reportIdsResult, cleaningIdsResult } = result.value;
+          const parsedId = Number(readStructValue<bigint>(item, "id", 0) || BigInt(index + 1));
           const rawLatitude = String(readStructValue<string>(item, "latitude", 3) || "");
           const rawLongitude = String(readStructValue<string>(item, "longitude", 4) || "");
-          const [latitude, longitude] = coordinatesFromContract(rawLatitude, rawLongitude, nextRestaurants.length);
-          const reportIds = reportIdsResult.status === "fulfilled" && Array.isArray(reportIdsResult.value) ? reportIdsResult.value : [];
+          const [latitude, longitude] = coordinatesFromContract(rawLatitude, rawLongitude, items.length);
+          const reportIds =
+            reportIdsResult.status === "fulfilled" && Array.isArray(reportIdsResult.value) ? reportIdsResult.value : [];
           const cleaningIds =
             cleaningIdsResult.status === "fulfilled" && Array.isArray(cleaningIdsResult.value) ? cleaningIdsResult.value : [];
 
-          nextRestaurants.push({
+          items.push({
             id: parsedId,
             name: String(readStructValue<string>(item, "name", 1) || `Restaurant ${parsedId}`),
             area: String(readStructValue<string>(item, "area", 2) || "Monad Testnet"),
@@ -177,7 +195,9 @@ export function Dashboard() {
             lastCleanedAt: cleaningIds.length > 0 ? `${cleaningIds.length} on-chain logs` : "No logs",
             tags: ["On-chain"]
           });
-        }
+
+          return items;
+        }, []);
 
         if (!isCancelled) {
           setRestaurants(nextRestaurants);
@@ -194,13 +214,11 @@ export function Dashboard() {
     }
 
     loadRestaurants();
-    const intervalId = window.setInterval(loadRestaurants, restaurantRefetchIntervalMs);
 
     return () => {
       isCancelled = true;
-      window.clearInterval(intervalId);
     };
-  }, [hasContract, publicClient, refreshNonce, restaurants.length]);
+  }, [hasContract, publicClient, refreshNonce]);
 
   useEffect(() => {
     if (restaurants.length > 0 && !restaurants.some((restaurant) => restaurant.id === selectedId)) {
@@ -208,9 +226,9 @@ export function Dashboard() {
     }
   }, [restaurants, selectedId]);
 
-  function selectRestaurant(restaurant: Restaurant) {
+  const selectRestaurant = useCallback((restaurant: Restaurant) => {
     setSelectedId(restaurant.id);
-  }
+  }, []);
 
   async function registerRestaurant(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -306,8 +324,8 @@ export function Dashboard() {
       <header className="border-b border-steel bg-white">
         <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-md bg-leaf text-white">
-              <Utensils size={22} />
+            <div className="h-11 w-11 overflow-hidden rounded-md border border-steel bg-white">
+              <Image src="/logo.jpg" alt="" width={44} height={44} className="h-full w-full object-cover" priority />
             </div>
             <div>
               <h1 className="text-2xl font-semibold tracking-normal text-ink">CrankFoodie</h1>
@@ -384,6 +402,12 @@ export function Dashboard() {
           {isLoadingRestaurants ? (
             <div className="rounded-md border border-steel bg-white p-3 text-sm text-ink">
               Loading restaurants from Monad testnet.
+            </div>
+          ) : null}
+
+          {restaurantReadError ? (
+            <div className="rounded-md border border-tomato bg-red-50 p-3 text-sm text-ink">
+              Could not load restaurants: {restaurantReadError}
             </div>
           ) : null}
 
