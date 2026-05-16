@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ClipboardList, ExternalLink, RefreshCw, Search, Star, UserRound } from "lucide-react";
-import { useAccount, useReadContract, useReadContracts } from "wagmi";
+import { useAccount, usePublicClient, useReadContract, useReadContracts } from "wagmi";
 import { WalletButton } from "@/components/wallet-button";
 import { crankFoodieAbi, crankFoodieAddress, reportTypeOptions } from "@/lib/contract";
 import { cn, ipfsToGateway } from "@/lib/utils";
@@ -35,11 +35,61 @@ type ReportRecord = {
 };
 
 export default function RestaurantReportsPage() {
-  const [restaurantInput, setRestaurantInput] = useState("1");
+  const [restaurantOptions, setRestaurantOptions] = useState<{ id: bigint; name: string }[]>([]);
+  const [isLoadingOptions, setIsLoadingOptions] = useState(false);
   const [requestedRestaurantId, setRequestedRestaurantId] = useState<bigint | null>(null);
   const [formError, setFormError] = useState("");
 
   const { address, isConnected } = useAccount();
+  const publicClient = usePublicClient();
+  const lastReadRef = useRef(0);
+
+  useEffect(() => {
+    if (!publicClient || !crankFoodieAddress) return;
+    const client = publicClient;
+    let cancelled = false;
+
+    async function readWithRetry<T>(req: Parameters<typeof client.readContract>[0]) {
+      const elapsed = Date.now() - lastReadRef.current;
+      if (elapsed < 90) await new Promise((r) => window.setTimeout(r, 90 - elapsed));
+      lastReadRef.current = Date.now();
+      try {
+        return (await client.readContract(req)) as T;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!msg.toLowerCase().includes("rate") && !msg.includes("429") && !msg.includes("-32011")) throw err;
+        await new Promise((r) => window.setTimeout(r, 1250));
+        lastReadRef.current = Date.now();
+        return (await client.readContract(req)) as T;
+      }
+    }
+
+    async function loadOptions() {
+      setIsLoadingOptions(true);
+      try {
+        const count = Number(await readWithRetry<bigint>({ address: crankFoodieAddress, abi: crankFoodieAbi, functionName: "restaurantCount" }));
+        const options: { id: bigint; name: string }[] = [];
+        for (let i = 0; i < count; i++) {
+          if (cancelled) return;
+          const restaurantId = BigInt(i + 1);
+          try {
+            const item = await readWithRetry<Record<string, unknown> & readonly unknown[]>({ address: crankFoodieAddress, abi: crankFoodieAbi, functionName: "getRestaurant", args: [restaurantId] });
+            const name = String((item["name"] ?? item[1]) || `Restaurant ${i + 1}`);
+            options.push({ id: restaurantId, name });
+          } catch { continue; }
+        }
+        if (!cancelled) {
+          setRestaurantOptions(options);
+          if (options.length > 0) setRequestedRestaurantId(options[0].id);
+        }
+      } finally {
+        if (!cancelled) setIsLoadingOptions(false);
+      }
+    }
+
+    loadOptions();
+    return () => { cancelled = true; };
+  }, [publicClient]);
   const reportTypeLabelByValue = useMemo(() => {
     return new Map<number, string>(reportTypeOptions.map((option) => [option.contractValue, option.label]));
   }, []);
@@ -97,20 +147,14 @@ export default function RestaurantReportsPage() {
 
   function generateReports(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const parsedId = Number(restaurantInput);
-    if (!Number.isInteger(parsedId) || parsedId <= 0) {
-      setFormError("Enter a positive restaurant ID.");
+    if (!requestedRestaurantId) {
+      setFormError("Select a restaurant.");
       return;
     }
-
     setFormError("");
-    const nextId = BigInt(parsedId);
-    setRequestedRestaurantId(nextId);
-    if (requestedRestaurantId === nextId) {
-      restaurantRead.refetch();
-      reportIdsRead.refetch();
-      reportsRead.refetch();
-    }
+    restaurantRead.refetch();
+    reportIdsRead.refetch();
+    reportsRead.refetch();
   }
 
   return (
@@ -141,15 +185,25 @@ export default function RestaurantReportsPage() {
               <ClipboardList size={20} />
             </div>
             <label className="grid gap-2 text-sm font-medium text-ink">
-              Restaurant ID
-              <input
-                type="number"
-                min="1"
-                step="1"
-                value={restaurantInput}
-                onChange={(event) => setRestaurantInput(event.target.value)}
-                className="min-h-11 rounded-md border border-steel px-3 outline-none focus:shadow-focus"
-              />
+              Restaurant
+              <select
+                value={requestedRestaurantId?.toString() ?? ""}
+                onChange={(event) => setRequestedRestaurantId(BigInt(event.target.value))}
+                disabled={isLoadingOptions || restaurantOptions.length === 0}
+                className="min-h-11 rounded-md border border-steel px-3 outline-none focus:shadow-focus disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isLoadingOptions ? (
+                  <option value="">Loading restaurants…</option>
+                ) : restaurantOptions.length === 0 ? (
+                  <option value="">No restaurants found</option>
+                ) : (
+                  restaurantOptions.map((opt) => (
+                    <option key={opt.id.toString()} value={opt.id.toString()}>
+                      {opt.name}
+                    </option>
+                  ))
+                )}
+              </select>
             </label>
             <button
               type="submit"
