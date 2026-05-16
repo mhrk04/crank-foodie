@@ -31,7 +31,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Only image uploads are supported." }, { status: 400 });
   }
 
-  const gateway = process.env.NEXT_PUBLIC_PINATA_GATEWAY || "https://gateway.pinata.cloud";
+  const gateway = process.env.NEXT_PUBLIC_PINATA_GATEWAY || "https://jade-patient-viper-512.mypinata.cloud";
   const uploads: PinataUpload[] = [];
 
   for (const file of files) {

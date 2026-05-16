@@ -12,7 +12,6 @@ export function scoreTone(score: number) {
 
 export function ipfsToGateway(uri: string) {
   if (!uri.startsWith("ipfs://")) return uri;
-  const gateway = process.env.NEXT_PUBLIC_PINATA_GATEWAY || "https://gateway.pinata.cloud";
+  const gateway = process.env.NEXT_PUBLIC_PINATA_GATEWAY || "https://jade-patient-viper-512.mypinata.cloud";
   return `${gateway}/ipfs/${uri.replace("ipfs://", "")}`;
 }
-

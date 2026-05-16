@@ -6,7 +6,7 @@ import { ArrowLeft, ClipboardList, ExternalLink, RefreshCw, Search, Star, UserRo
 import { useAccount, useReadContract, useReadContracts } from "wagmi";
 import { WalletButton } from "@/components/wallet-button";
 import { crankFoodieAbi, crankFoodieAddress, reportTypeOptions } from "@/lib/contract";
-import { cn } from "@/lib/utils";
+import { cn, ipfsToGateway } from "@/lib/utils";
 
 type RestaurantRecord = {
   id: bigint;
@@ -242,9 +242,9 @@ export default function RestaurantReportsPage() {
                   {report.evidenceURIs.length > 0 ? (
                     <div className="mt-4 space-y-2">
                       <p className="text-xs font-medium uppercase tracking-normal text-ink/55">Evidence</p>
-                      <div className="flex flex-wrap gap-2">
+                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                         {report.evidenceURIs.map((uri, index) => (
-                          <UriLink key={`${uri}-${index}`} label={`Evidence ${index + 1}`} uri={uri} />
+                          <EvidenceImage key={`${uri}-${index}`} label={`Evidence ${index + 1}`} uri={uri} />
                         ))}
                       </div>
                     </div>
@@ -288,6 +288,28 @@ function UriLink({ className, label, uri }: { className?: string; label: string;
   );
 }
 
+function EvidenceImage({ label, uri }: { label: string; uri: string }) {
+  const [hasError, setHasError] = useState(false);
+  const href = toHttpUri(uri);
+
+  if (hasError) {
+    return <UriLink label={label} uri={uri} />;
+  }
+
+  return (
+    <a href={href} target="_blank" rel="noreferrer" className="group block overflow-hidden rounded-md border border-steel bg-white hover:border-leaf">
+      <div className="aspect-[4/3] bg-mint">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={href} alt={label} className="h-full w-full object-cover" loading="lazy" onError={() => setHasError(true)} />
+      </div>
+      <div className="flex items-center justify-between gap-2 px-3 py-2 text-sm font-medium text-ink">
+        <span>{label}</span>
+        <ExternalLink size={14} className="shrink-0 text-ink/60 group-hover:text-leaf" />
+      </div>
+    </a>
+  );
+}
+
 function shortAddress(address: string) {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
@@ -302,8 +324,5 @@ function formatTimestamp(timestamp: bigint) {
 }
 
 function toHttpUri(uri: string) {
-  if (uri.startsWith("ipfs://")) {
-    return `https://ipfs.io/ipfs/${uri.replace("ipfs://", "")}`;
-  }
-  return uri;
+  return ipfsToGateway(uri);
 }
