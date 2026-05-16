@@ -8,9 +8,9 @@ describe("CrankFoodie", function () {
     await contract.write.registerRestaurant([
       "Kubis & Kale",
       "Bandar Sunway",
-      3068500n,
-      101603700n,
-      2,
+      "3, Jalan PJS 11/15, Bandar Sunway",
+      "47500 Subang Jaya, Selangor",
+      10n,
       "ipfs://restaurant-metadata"
     ]);
 
@@ -24,6 +24,7 @@ describe("CrankFoodie", function () {
     const score = await contract.read.calculateHygieneScore([1n]);
 
     expect(restaurant.name).to.equal("Kubis & Kale");
+    expect(restaurant.priceRange).to.equal(10n);
     expect(reportIds).to.deep.equal([1n]);
     expect(report.starRating).to.equal(2);
     expect(report.evidenceURIs).to.deep.equal(["ipfs://evidence-a", "ipfs://evidence-b"]);

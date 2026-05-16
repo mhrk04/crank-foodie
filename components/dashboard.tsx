@@ -18,7 +18,7 @@ import { WalletButton } from "@/components/wallet-button";
 import { RestaurantMap } from "@/components/restaurant-map";
 import { ReportModal } from "@/components/report-modal";
 import { CleaningLogModal } from "@/components/cleaning-log-modal";
-import { crankFoodieAbi, crankFoodieAddress, reportTypeOptions, scaleCoordinate } from "@/lib/contract";
+import { crankFoodieAbi, crankFoodieAddress, reportTypeOptions } from "@/lib/contract";
 import { seedRestaurants, supportedAreas } from "@/lib/seed-data";
 import { insertSupabaseRow, isSupabaseConfigured } from "@/lib/supabase";
 import type { CleaningLogDraft, ReportDraft, Restaurant } from "@/lib/types";
@@ -27,9 +27,9 @@ import { cn, scoreTone } from "@/lib/utils";
 const emptyRestaurantForm = {
   name: "",
   area: "Bandar Sunway",
-  latitude: "3.068500",
-  longitude: "101.603700",
-  priceRange: "2",
+  latitude: "3, Jalan PJS 11/15, Bandar Sunway",
+  longitude: "47500 Subang Jaya, Selangor",
+  priceRange: "10",
   metadataURI: ""
 };
 
@@ -76,9 +76,11 @@ export function Dashboard() {
       return;
     }
 
-    const latitude = Number(restaurantForm.latitude);
-    const longitude = Number(restaurantForm.longitude);
     const priceRange = Number(restaurantForm.priceRange);
+    if (!Number.isInteger(priceRange) || priceRange <= 0) {
+      setNotice("Price must be a positive whole number.");
+      return;
+    }
 
     writeContract({
       address: crankFoodieAddress,
@@ -87,9 +89,9 @@ export function Dashboard() {
       args: [
         restaurantForm.name,
         restaurantForm.area,
-        scaleCoordinate(latitude),
-        scaleCoordinate(longitude),
-        priceRange,
+        restaurantForm.latitude,
+        restaurantForm.longitude,
+        BigInt(priceRange),
         restaurantForm.metadataURI
       ]
     });
@@ -98,9 +100,9 @@ export function Dashboard() {
       id: restaurants.length + 1,
       name: restaurantForm.name,
       area: restaurantForm.area,
-      latitude,
-      longitude,
-      priceRange: priceRange as 1 | 2 | 3 | 4,
+      latitude: 3.0685,
+      longitude: 101.6037,
+      priceRange,
       metadataURI: restaurantForm.metadataURI,
       score: 88,
       reportCount: 0,
@@ -116,8 +118,8 @@ export function Dashboard() {
     await insertSupabaseRow("restaurants", {
       name: optimisticRestaurant.name,
       area: optimisticRestaurant.area,
-      latitude: optimisticRestaurant.latitude,
-      longitude: optimisticRestaurant.longitude,
+      latitude: restaurantForm.latitude,
+      longitude: restaurantForm.longitude,
       price_range: optimisticRestaurant.priceRange,
       metadata_uri: optimisticRestaurant.metadataURI
     });
@@ -302,37 +304,32 @@ export function Dashboard() {
                   ))}
                 </select>
               </Field>
-              <Field label="Latitude">
+              <Field label="Address line 1">
                 <input
                   required
-                  type="number"
-                  step="0.000001"
                   value={restaurantForm.latitude}
                   onChange={(event) => setRestaurantForm((current) => ({ ...current, latitude: event.target.value }))}
                   className="min-h-11 rounded-md border border-steel px-3 outline-none focus:shadow-focus"
                 />
               </Field>
-              <Field label="Longitude">
+              <Field label="Address line 2">
                 <input
                   required
-                  type="number"
-                  step="0.000001"
                   value={restaurantForm.longitude}
                   onChange={(event) => setRestaurantForm((current) => ({ ...current, longitude: event.target.value }))}
                   className="min-h-11 rounded-md border border-steel px-3 outline-none focus:shadow-focus"
                 />
               </Field>
-              <Field label="Price range">
-                <select
+              <Field label="Price">
+                <input
+                  required
+                  type="number"
+                  min="1"
+                  step="1"
                   value={restaurantForm.priceRange}
                   onChange={(event) => setRestaurantForm((current) => ({ ...current, priceRange: event.target.value }))}
                   className="min-h-11 rounded-md border border-steel px-3 outline-none focus:shadow-focus"
-                >
-                  <option value="1">$</option>
-                  <option value="2">$$</option>
-                  <option value="3">$$$</option>
-                  <option value="4">$$$$</option>
-                </select>
+                />
               </Field>
               <Field label="Metadata URI">
                 <input
@@ -376,7 +373,7 @@ export function Dashboard() {
               <Info label="Reports" value={String(selectedRestaurant.reportCount)} />
               <Info label="Cleanings" value={String(selectedRestaurant.cleaningCountToday)} />
               <Info label="Last cleaned" value={selectedRestaurant.lastCleanedAt} />
-              <Info label="Price" value={"$".repeat(selectedRestaurant.priceRange)} />
+              <Info label="Price" value={String(selectedRestaurant.priceRange)} />
             </div>
 
             <div className="mt-4 flex flex-wrap gap-2">
