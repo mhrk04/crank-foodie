@@ -103,7 +103,7 @@ Stores:
 Stores:
 - Images
 - Evidence photos
-- Long descriptions
+- Descriptions
 - Metadata
 
 ## Frontend
@@ -111,10 +111,7 @@ Built with:
 - Next.js
 - TailwindCSS
 - Wagmi/Viem
-- Mapbox or Google Maps
-
-## Database
-- Supabase
+- Mapbox
 
 ---
 
