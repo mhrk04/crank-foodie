@@ -39,6 +39,7 @@ export default function RestaurantReportsPage() {
   const [isLoadingOptions, setIsLoadingOptions] = useState(false);
   const [requestedRestaurantId, setRequestedRestaurantId] = useState<bigint | null>(null);
   const [formError, setFormError] = useState("");
+  const [showOnlyMyReviews, setShowOnlyMyReviews] = useState(false);
 
   const { address, isConnected } = useAccount();
   const publicClient = usePublicClient();
@@ -68,16 +69,41 @@ export default function RestaurantReportsPage() {
       setIsLoadingOptions(true);
       try {
         const count = Number(await readWithRetry<bigint>({ address: crankFoodieAddress, abi: crankFoodieAbi, functionName: "restaurantCount" }));
+        
+        if (count === 0) {
+          if (!cancelled) {
+            setRestaurantOptions([]);
+          }
+          return;
+        }
+
+        // Construct all multicall requests for getRestaurant
+        const calls = [];
+        for (let i = 0; i < count; i++) {
+          calls.push({
+            address: crankFoodieAddress,
+            abi: crankFoodieAbi,
+            functionName: "getRestaurant",
+            args: [BigInt(i + 1)]
+          });
+        }
+
+        // Execute in one single batch request
+        const results = await client.multicall({
+          contracts: calls,
+          allowFailure: true
+        });
+
         const options: { id: bigint; name: string }[] = [];
         for (let i = 0; i < count; i++) {
-          if (cancelled) return;
-          const restaurantId = BigInt(i + 1);
-          try {
-            const item = await readWithRetry<Record<string, unknown> & readonly unknown[]>({ address: crankFoodieAddress, abi: crankFoodieAbi, functionName: "getRestaurant", args: [restaurantId] });
+          const res = results[i];
+          if (res.status === "success" && res.result) {
+            const item = res.result as any;
             const name = String((item["name"] ?? item[1]) || `Restaurant ${i + 1}`);
-            options.push({ id: restaurantId, name });
-          } catch { continue; }
+            options.push({ id: BigInt(i + 1), name });
+          }
         }
+
         if (!cancelled) {
           setRestaurantOptions(options);
           if (options.length > 0) setRequestedRestaurantId(options[0].id);
@@ -137,10 +163,10 @@ export default function RestaurantReportsPage() {
       .filter((item): item is ReportRecord => Boolean(item));
   }, [reportsRead.data]);
 
-  const walletReports = useMemo(() => {
-    if (!address) return reports;
+  const displayReports = useMemo(() => {
+    if (!address || !showOnlyMyReviews) return reports;
     return reports.filter((report) => report.reporter.toLowerCase() === address.toLowerCase());
-  }, [address, reports]);
+  }, [address, reports, showOnlyMyReviews]);
 
   const isLoading = restaurantRead.isLoading || reportIdsRead.isLoading || reportsRead.isLoading;
   const readError = restaurantRead.error || reportIdsRead.error || reportsRead.error;
@@ -178,6 +204,13 @@ export default function RestaurantReportsPage() {
         </div>
       </header>
 
+      <div className="bg-amber/10 border-b border-steel px-4 py-3 text-sm text-ink">
+        <div className="mx-auto max-w-6xl flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+          <span className="font-bold text-amber shrink-0">⚠️ Disclaimer:</span>
+          <span>This application is for <strong>hackathon demonstration and testing purposes only</strong>. All restaurant reviews and data shown here are simulated on the Monad testnet and do not represent actual real-world hygiene ratings or reviews.</span>
+        </div>
+      </div>
+
       <section className="mx-auto grid max-w-6xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[360px_1fr] lg:px-8">
         <aside className="space-y-4">
           <form onSubmit={generateReports} className="rounded-md border border-steel bg-white p-4">
@@ -214,8 +247,16 @@ export default function RestaurantReportsPage() {
               {isLoading ? "Generating" : "Generate reviews"}
             </button>
             {formError ? <p className="mt-3 text-sm text-tomato">{formError}</p> : null}
-            {!isConnected ? (
-              <p className="mt-3 text-sm text-ink/60">Connect your wallet to filter this list to your own submitted reviews.</p>
+            {isConnected ? (
+              <label className="mt-4 flex items-center gap-2 text-sm text-ink/80 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showOnlyMyReviews}
+                  onChange={(e) => setShowOnlyMyReviews(e.target.checked)}
+                  className="rounded border-steel text-leaf focus:ring-leaf"
+                />
+                Show only my reviews
+              </label>
             ) : null}
           </form>
 
@@ -247,7 +288,7 @@ export default function RestaurantReportsPage() {
               </div>
               <div className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
                 <Info label="Generated IDs" value={String(reportIds.length)} />
-                <Info label="My reviews" value={String(walletReports.length)} />
+                <Info label="Reviews shown" value={String(displayReports.length)} />
                 <Info label="Price" value={restaurant.priceRange.toString()} />
               </div>
             </section>
@@ -264,16 +305,19 @@ export default function RestaurantReportsPage() {
             </div>
           ) : null}
 
-          {walletReports.length > 0 ? (
+          {displayReports.length > 0 ? (
             <section className="space-y-3">
-              {walletReports.map((report) => (
-                <article key={report.id.toString()} className="rounded-md border border-steel bg-white p-4">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="font-semibold text-ink">Review #{report.id.toString()}</h3>
-                        {report.verified ? <span className="rounded-md bg-mint px-2 py-1 text-xs font-semibold text-leaf">Verified</span> : null}
-                      </div>
+              {displayReports.map((report) => {
+                const isMyReport = address && report.reporter.toLowerCase() === address.toLowerCase();
+                return (
+                  <article key={report.id.toString()} className="rounded-md border border-steel bg-white p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="font-semibold text-ink">Review #{report.id.toString()}</h3>
+                          {report.verified ? <span className="rounded-md bg-mint px-2 py-1 text-xs font-semibold text-leaf">Verified</span> : null}
+                          {isMyReport ? <span className="rounded-md bg-sky-100 px-2 py-1 text-xs font-semibold text-ocean">My Review</span> : null}
+                        </div>
                       <p className="mt-1 flex items-center gap-1 break-all text-sm text-ink/65">
                         <UserRound size={14} />
                         {shortAddress(report.reporter)}
@@ -304,13 +348,13 @@ export default function RestaurantReportsPage() {
                     </div>
                   ) : null}
                 </article>
-              ))}
+              )})}
             </section>
           ) : requestedRestaurantId !== null && reportIds.length > 0 && !isLoading ? (
             <div className="rounded-md border border-steel bg-white p-4 text-sm text-ink/70">
-              {isConnected
+              {isConnected && showOnlyMyReviews
                 ? "This restaurant has reports, but none were submitted by your connected wallet."
-                : "Connect your wallet to filter the generated reports to your own reviews."}
+                : "No reviews to display."}
             </div>
           ) : null}
         </div>
