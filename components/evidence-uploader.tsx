@@ -1,6 +1,7 @@
 "use client";
 
 import { ChangeEvent, useState } from "react";
+import { useAccount } from "wagmi";
 import { UploadCloud } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -13,6 +14,7 @@ type EvidenceUploaderProps = {
 export function EvidenceUploader({ value, onChange, maxFiles = 3 }: EvidenceUploaderProps) {
   const [status, setStatus] = useState<"idle" | "uploading" | "done" | "error">("idle");
   const [message, setMessage] = useState("");
+  const { isConnected } = useAccount();
 
   async function uploadFile(event: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.target.files || []).slice(0, Math.max(0, maxFiles - value.length));
@@ -82,13 +84,15 @@ export function EvidenceUploader({ value, onChange, maxFiles = 3 }: EvidenceUplo
             ) : null}
           </div>
         ))}
-        <label className={cn("inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-md bg-ink px-4 text-sm font-semibold text-white", status === "uploading" && "opacity-70")}>
+        <label className={cn("inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-md bg-ink px-4 text-sm font-semibold text-white", (status === "uploading" || !isConnected) && "opacity-70 cursor-not-allowed")}>
           <UploadCloud size={18} />
           <span>{status === "uploading" ? "Uploading" : `Upload images (${value.length}/${maxFiles})`}</span>
-          <input className="sr-only" type="file" accept="image/*" multiple onChange={uploadFile} disabled={status === "uploading" || value.length >= maxFiles} />
+          <input className="sr-only" type="file" accept="image/*" multiple onChange={uploadFile} disabled={status === "uploading" || value.length >= maxFiles || !isConnected} />
         </label>
       </div>
-      {message ? (
+      {!isConnected ? (
+        <p className="text-xs text-tomato">Connect your wallet to upload images.</p>
+      ) : message ? (
         <p className={cn("text-xs", status === "error" ? "text-tomato" : "text-leaf")}>{message}</p>
       ) : null}
     </div>
