@@ -173,69 +173,91 @@ export function Dashboard() {
           return;
         }
 
+        // Construct all multicall requests
+        const calls = [];
+        for (let index = 0; index < count; index++) {
+          const restaurantId = BigInt(index + 1);
+          calls.push(
+            {
+              address: crankFoodieAddress,
+              abi: crankFoodieAbi,
+              functionName: "getRestaurant",
+              args: [restaurantId]
+            },
+            {
+              address: crankFoodieAddress,
+              abi: crankFoodieAbi,
+              functionName: "calculateHygieneScore",
+              args: [restaurantId]
+            },
+            {
+              address: crankFoodieAddress,
+              abi: crankFoodieAbi,
+              functionName: "getRestaurantReportIds",
+              args: [restaurantId]
+            },
+            {
+              address: crankFoodieAddress,
+              abi: crankFoodieAbi,
+              functionName: "getRestaurantCleaningLogIds",
+              args: [restaurantId]
+            }
+          );
+        }
+
+        // Execute all requests in a single multicall!
+        const results = (await client.multicall({
+          contracts: calls,
+          allowFailure: true
+        })) as any[];
+
         const nextRestaurants: Restaurant[] = [];
         const scoreReadFailures: number[] = [];
 
         for (let index = 0; index < count; index++) {
           const restaurantId = BigInt(index + 1);
+          const baseIndex = index * 4;
 
-          try {
-            const item = await readContractWithRetry<OnChainRestaurant>({
-              address: crankFoodieAddress,
-              abi: crankFoodieAbi,
-              functionName: "getRestaurant",
-              args: [restaurantId]
-            });
+          const getRes = results[baseIndex];
+          const getScore = results[baseIndex + 1];
+          const getReports = results[baseIndex + 2];
+          const getCleanings = results[baseIndex + 3];
 
-            const parsedId = Number(readStructValue<bigint>(item, "id", 0) || restaurantId);
-            const rawLatitude = String(readStructValue<string>(item, "latitude", 3) || "");
-            const rawLongitude = String(readStructValue<string>(item, "longitude", 4) || "");
-            const [latitude, longitude] = coordinatesFromContract(rawLatitude, rawLongitude, nextRestaurants.length);
-
-            let score: number | null = null;
-            try {
-              score = Number(
-                await readContractWithRetry<number>({
-                  address: crankFoodieAddress,
-                  abi: crankFoodieAbi,
-                  functionName: "calculateHygieneScore",
-                  args: [restaurantId]
-                })
-              );
-            } catch {
-              scoreReadFailures.push(parsedId);
-            }
-
-            const reportIds = await readContractWithRetry<bigint[]>({
-              address: crankFoodieAddress,
-              abi: crankFoodieAbi,
-              functionName: "getRestaurantReportIds",
-              args: [restaurantId]
-            });
-            const cleaningIds = await readContractWithRetry<bigint[]>({
-              address: crankFoodieAddress,
-              abi: crankFoodieAbi,
-              functionName: "getRestaurantCleaningLogIds",
-              args: [restaurantId]
-            });
-
-            nextRestaurants.push({
-              id: parsedId,
-              name: String(readStructValue<string>(item, "name", 1) || `Restaurant ${parsedId}`),
-              area: String(readStructValue<string>(item, "area", 2) || "Monad Testnet"),
-              latitude,
-              longitude,
-              priceRange: Number(readStructValue<bigint>(item, "priceRange", 5) || BigInt(0)),
-              metadataURI: String(readStructValue<string>(item, "metadataURI", 6) || ""),
-              score,
-              reportCount: reportIds.length,
-              cleaningCountToday: cleaningIds.length,
-              lastCleanedAt: cleaningIds.length > 0 ? `${cleaningIds.length} on-chain logs` : "No logs",
-              tags: ["On-chain"]
-            });
-          } catch {
+          // If the primary getRestaurant call failed, we skip this restaurant
+          if (!getRes || getRes.status !== "success" || !getRes.result) {
             continue;
           }
+
+          const item = getRes.result as any;
+          const parsedId = Number(readStructValue<bigint>(item, "id", 0) || restaurantId);
+          const rawLatitude = String(readStructValue<string>(item, "latitude", 3) || "");
+          const rawLongitude = String(readStructValue<string>(item, "longitude", 4) || "");
+          const [latitude, longitude] = coordinatesFromContract(rawLatitude, rawLongitude, nextRestaurants.length);
+
+          let score: number | null = null;
+          if (getScore && getScore.status === "success" && getScore.result !== undefined) {
+            score = Number(getScore.result);
+          } else {
+            scoreReadFailures.push(parsedId);
+          }
+
+          const reportIds = (getReports && getReports.status === "success" ? (getReports.result as bigint[]) : []) || [];
+          const cleaningIds = (getCleanings && getCleanings.status === "success" ? (getCleanings.result as bigint[]) : []) || [];
+
+          nextRestaurants.push({
+            id: parsedId,
+            name: String(readStructValue<string>(item, "name", 1) || `Restaurant ${parsedId}`),
+            area: String(readStructValue<string>(item, "area", 2) || "Monad Testnet"),
+            latitude,
+            longitude,
+            priceRange: Number(readStructValue<bigint>(item, "priceRange", 5) || BigInt(0)),
+            metadataURI: String(readStructValue<string>(item, "metadataURI", 6) || ""),
+            score,
+            reportCount: reportIds.length,
+            cleaningCountToday: cleaningIds.length,
+            lastCleanedAt: cleaningIds.length > 0 ? `${cleaningIds.length} on-chain logs` : "No logs",
+            tags: ["On-chain"]
+          });
         }
 
         if (!isCancelled) {
@@ -385,6 +407,13 @@ export function Dashboard() {
           </div>
         </div>
       </header>
+
+      <div className="bg-amber/10 border-b border-steel px-4 py-3 text-sm text-ink">
+        <div className="mx-auto max-w-7xl flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+          <span className="font-bold text-amber shrink-0">⚠️ Disclaimer:</span>
+          <span>This application is for <strong>hackathon demonstration and testing purposes only</strong>. The restaurant names and hygiene scores shown here are simulated on the Monad testnet and do not represent actual real-world hygiene reviews or ratings.</span>
+        </div>
+      </div>
 
       <section className="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[1fr_360px] lg:px-8">
         <div className="space-y-6">
